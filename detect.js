@@ -2,8 +2,8 @@
   'use strict';
 
   const ROUTES = {
-    mobile: '/remote.html',
-    desktop: '/presenter.html'
+    mobile: 'remote.html',
+    desktop: 'presenter.html'
   };
 
   function isMobileDevice() {
@@ -12,16 +12,15 @@
       if (navigator.userAgentData.mobile) return true;
     }
 
-    // 2. Classic Mobile & Tablet User-Agent signatures
+    // 2. Mobile & Tablet User-Agent check
     const ua = navigator.userAgent || navigator.vendor || global.opera || '';
     const mobileUARegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobi/i;
     if (mobileUARegex.test(ua)) return true;
 
-    // 3. iPadOS 13+ desktop UA spoofing check
-    const isIPadOS = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
-    if (isIPadOS) return true;
+    // 3. iPadOS 13+ desktop-spoofed UA detection
+    if (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) return true;
 
-    // 4. Coarse pointer + small screen fallback
+    // 4. Touch-first small screen fallback
     const hasCoarsePointer =
       typeof global.matchMedia === 'function' &&
       global.matchMedia('(pointer: coarse)').matches;
