@@ -8,7 +8,6 @@
   />
   <meta name="theme-color" content="#060913" />
   <title>SlideSync — Mobile Remote</title>
-  <!-- Auto-redirect desktop visitors straight back to index.html -->
   <script src="js/detect.js"></script>
   <script>
     window.PlatformDetector.enforcePlatform('mobile');
@@ -50,7 +49,6 @@
 
     .hidden { display: none !important; }
 
-    /* Pairing Screen */
     .connect-view {
       min-height: 100%;
       display: flex;
@@ -134,7 +132,6 @@
       font-weight: 500;
     }
 
-    /* Active Remote Layout */
     .remote-view {
       height: 100dvh;
       max-width: 520px;
@@ -173,7 +170,6 @@
       font-weight: 600;
     }
 
-    /* Timer & Slide Bar */
     .meta-bar {
       display: flex;
       align-items: center;
@@ -207,7 +203,6 @@
       font-weight: 700;
     }
 
-    /* Preview & Laser Pad */
     .preview-card {
       position: relative;
       width: 100%;
@@ -267,7 +262,6 @@
       pointer-events: none;
     }
 
-    /* Post-PPT Direct Link Bar */
     .redirect-bar {
       display: flex;
       align-items: center;
@@ -284,15 +278,8 @@
       border-color: #22d3ee;
       box-shadow: 0 0 18px rgba(34, 211, 238, 0.28);
     }
-
     .redirect-info { min-width: 0; flex: 1; }
-    .redirect-tag {
-      font-size: 0.65rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: #67e8f9;
-    }
+    .redirect-tag { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #67e8f9; }
     .redirect-url-text {
       font-family: 'JetBrains Mono', monospace;
       font-size: 0.76rem;
@@ -313,7 +300,6 @@
       font-weight: 700;
     }
 
-    /* Speaker Notes */
     .notes-card {
       flex: 1;
       min-height: 54px;
@@ -326,24 +312,9 @@
       flex-direction: column;
       overflow: hidden;
     }
-    .notes-label {
-      font-size: 0.68rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.07em;
-      color: var(--muted);
-      margin-bottom: 4px;
-    }
-    .notes-content {
-      flex: 1;
-      overflow-y: auto;
-      font-size: 0.88rem;
-      line-height: 1.45;
-      color: #e2e8f0;
-      white-space: pre-wrap;
-    }
+    .notes-label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin-bottom: 4px; }
+    .notes-content { flex: 1; overflow-y: auto; font-size: 0.88rem; line-height: 1.45; color: #e2e8f0; white-space: pre-wrap; }
 
-    /* Bottom Dock */
     .control-dock { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
     .utility-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
     .util-btn {
@@ -376,12 +347,8 @@
     .nav-btn:active:not(:disabled) { transform: scale(0.97); }
     .nav-btn:disabled { opacity: 0.35; }
     .prev-btn { background: var(--glass-2); border: 1px solid var(--border); }
-    .next-btn {
-      background: linear-gradient(135deg, #4f46e5, #6366f1);
-      box-shadow: 0 10px 28px rgba(79, 70, 229, 0.42);
-    }
+    .next-btn { background: linear-gradient(135deg, #4f46e5, #6366f1); box-shadow: 0 10px 28px rgba(79, 70, 229, 0.42); }
 
-    /* Modals */
     .modal-backdrop {
       position: fixed;
       inset: 0;
@@ -433,7 +400,6 @@
   </style>
 </head>
 <body>
-  <!-- View 1: Room Pairing -->
   <section class="connect-view" id="connectView">
     <div class="connect-card">
       <div class="brand-badge">SlideSync Remote</div>
@@ -461,7 +427,6 @@
     </div>
   </section>
 
-  <!-- View 2: Mobile Remote Cockpit -->
   <section class="remote-view hidden" id="remoteView">
     <header class="remote-header">
       <div class="conn-status">
@@ -496,7 +461,6 @@
       <div class="laser-indicator hidden" id="laserIndicator"></div>
     </div>
 
-    <!-- After-Presentation Direct Link Launcher -->
     <div class="redirect-bar" id="redirectBar">
       <div class="redirect-info">
         <div class="redirect-tag">After-PPT Direct Link</div>
@@ -543,7 +507,6 @@
     </footer>
   </section>
 
-  <!-- Slide Jump Modal -->
   <div class="modal-backdrop hidden" id="jumpModal">
     <div class="modal-sheet">
       <div class="modal-header">
@@ -554,7 +517,6 @@
     </div>
   </div>
 
-  <!-- Set / Launch Direct Link Modal -->
   <div class="modal-backdrop hidden" id="redirectModal">
     <div class="modal-sheet">
       <div class="modal-header">
@@ -576,7 +538,7 @@
     </div>
   </div>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mqtt@4.3.7/dist/mqtt.min.js"></script>
   <script>
     (function () {
       'use strict';
@@ -629,21 +591,20 @@
       const jumpGrid = document.getElementById('jumpGrid');
       const closeJumpBtn = document.getElementById('closeJumpBtn');
 
-      const PEER_PREFIX = 'slidesync-';
-      const ICE_CONFIG = {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun.cloudflare.com:3478' }
-        ]
-      };
+      const BROKERS = [
+        { name: 'EMQX', url: 'wss://broker.emqx.io:8084/mqtt' },
+        { name: 'HiveMQ', url: 'wss://broker.hivemq.com:8884/mqtt' }
+      ];
 
-      let peer = null;
-      let activeConn = null;
-      let peerReady = false;
-      let pendingRoomCode = '';
+      const remoteId = 'r-' + Math.random().toString(36).slice(2, 9);
+      let mqttClient = null;
       let currentRoomCode = '';
-      let connectTimeoutId = null;
+      let currentBrokerIdx = 0;
+      let paired = false;
+      let joinRetryTimer = null;
+      let brokerFallbackTimer = null;
+      let joinTimeoutTimer = null;
+      let heartbeatTimer = null;
 
       let deckState = {
         currentSlide: 0,
@@ -676,7 +637,7 @@
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible' && currentRoomCode) {
           requestWakeLock();
-          if (!activeConn || !activeConn.open) connectToRoom(currentRoomCode);
+          sendCommand('ping');
         }
       });
 
@@ -684,116 +645,128 @@
         if (navigator.vibrate) navigator.vibrate(ms);
       }
 
-      function initPeer() {
-        if (!window.Peer) {
-          showConnectError('PeerJS network script failed to load. Check your connection.');
-          return;
-        }
-        if (peer && !peer.destroyed) return;
-        peerReady = false;
-        peer = new window.Peer({ debug: 1, config: ICE_CONFIG });
-
-        peer.on('open', () => {
-          peerReady = true;
-          if (pendingRoomCode) {
-            const code = pendingRoomCode;
-            pendingRoomCode = '';
-            connectToRoom(code);
-          }
-        });
-
-        peer.on('disconnected', () => {
-          peerReady = false;
-          if (peer && !peer.destroyed) {
-            try { peer.reconnect(); } catch {}
-          }
-        });
-
-        peer.on('error', (err) => {
-          clearTimeout(connectTimeoutId);
-          joinBtn.disabled = false;
-          connectStatus.classList.add('hidden');
-          if (err.type === 'peer-unavailable') {
-            showConnectError(
-              `Room "${currentRoomCode || roomInput.value.toUpperCase()}" was not found. Make sure the desktop presenter page is open.`
-            );
-          } else {
-            showConnectError('Connection error (' + err.type + '). Please try again.');
-          }
-        });
+      function cmdTopic(code) {
+        return `slidesync/v2/${code}/cmd`;
+      }
+      function stateTopic(code) {
+        return `slidesync/v2/${code}/state`;
       }
 
       function showConnectError(msg) {
         connectError.textContent = msg;
         connectError.classList.remove('hidden');
+        connectStatus.classList.add('hidden');
+        joinBtn.disabled = false;
         connectView.classList.remove('hidden');
         remoteView.classList.add('hidden');
       }
 
-      function connectToRoom(rawCode) {
+      function cleanupMqtt() {
+        clearInterval(joinRetryTimer);
+        clearTimeout(brokerFallbackTimer);
+        clearTimeout(joinTimeoutTimer);
+        clearInterval(heartbeatTimer);
+        if (mqttClient) {
+          try { mqttClient.end(true); } catch {}
+          mqttClient = null;
+        }
+      }
+
+      function connectToRoom(rawCode, preferredBrokerIdx = 0, allowFallback = true) {
         const clean = String(rawCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '').trim();
         if (!clean) return;
+        if (!window.mqtt) {
+          showConnectError('Cloud messaging script did not load. Please check your connection.');
+          return;
+        }
 
+        cleanupMqtt();
         currentRoomCode = clean;
+        currentBrokerIdx = preferredBrokerIdx % BROKERS.length;
+        paired = false;
+
         connectError.classList.add('hidden');
         connectStatus.textContent = `Connecting to room ${clean}...`;
         connectStatus.classList.remove('hidden');
         joinBtn.disabled = true;
 
-        if (!peer || peer.destroyed) {
-          pendingRoomCode = clean;
-          initPeer();
-          return;
-        }
+        const broker = BROKERS[currentBrokerIdx];
+        const clientId = `ss-rem-${clean}-${remoteId}`;
 
-        if (!peerReady) {
-          pendingRoomCode = clean;
-          if (peer.disconnected) {
-            try { peer.reconnect(); } catch {}
-          }
-          return;
-        }
-
-        if (activeConn) {
-          try { activeConn.close(); } catch {}
-          activeConn = null;
-        }
-
-        const conn = peer.connect(PEER_PREFIX + clean, { reliable: true });
-        activeConn = conn;
-
-        clearTimeout(connectTimeoutId);
-        connectTimeoutId = setTimeout(() => {
-          if (!conn.open) {
-            try { conn.close(); } catch {}
-            joinBtn.disabled = false;
-            connectStatus.classList.add('hidden');
-            showConnectError('Connection timed out. Verify the room code and try again.');
-          }
-        }, 12000);
-
-        conn.on('open', () => {
-          clearTimeout(connectTimeoutId);
-          joinBtn.disabled = false;
-          connectStatus.classList.add('hidden');
-          activeRoomBadge.textContent = `ROOM ${clean}`;
-          connectView.classList.add('hidden');
-          remoteView.classList.remove('hidden');
-          setConnectionStatus(true);
-          requestWakeLock();
+        mqttClient = window.mqtt.connect(broker.url, {
+          clientId,
+          clean: true,
+          keepalive: 25,
+          reconnectPeriod: 2000,
+          connectTimeout: 5000
         });
 
-        conn.on('data', (msg) => {
-          if (msg && msg.type === 'state') applyDeckState(msg.state);
+        // Overall 10-second timeout if desktop isn't open
+        joinTimeoutTimer = setTimeout(() => {
+          if (!paired) {
+            cleanupMqtt();
+            showConnectError(
+              `No active presenter found for room "${clean}". Make sure the desktop page is open and says "Ready for Remote".`
+            );
+          }
+        }, 10000);
+
+        // If no reply on Broker 0 within 3.5s, switch to Broker 1 automatically
+        if (allowFallback && currentBrokerIdx === 0) {
+          brokerFallbackTimer = setTimeout(() => {
+            if (!paired && currentRoomCode === clean) {
+              connectToRoom(clean, 1, false);
+            }
+          }, 3500);
+        }
+
+        mqttClient.on('connect', () => {
+          mqttClient.subscribe(stateTopic(clean), { qos: 0 }, () => {
+            sendCommand('join');
+            clearInterval(joinRetryTimer);
+            joinRetryTimer = setInterval(() => {
+              if (!paired) sendCommand('join');
+              else clearInterval(joinRetryTimer);
+            }, 1400);
+          });
+
+          if (paired) setConnectionStatus(true);
         });
 
-        conn.on('close', () => { if (activeConn === conn) setConnectionStatus(false); });
-        conn.on('error', () => { if (activeConn === conn) setConnectionStatus(false); });
+        mqttClient.on('message', (topic, message) => {
+          if (topic !== stateTopic(clean)) return;
+          try {
+            const msg = JSON.parse(message.toString());
+            if (msg && msg.type === 'state') {
+              if (!paired) {
+                paired = true;
+                clearInterval(joinRetryTimer);
+                clearTimeout(brokerFallbackTimer);
+                clearTimeout(joinTimeoutTimer);
+
+                joinBtn.disabled = false;
+                connectStatus.classList.add('hidden');
+                activeRoomBadge.textContent = `ROOM ${clean}`;
+                connectView.classList.add('hidden');
+                remoteView.classList.remove('hidden');
+                setConnectionStatus(true);
+                requestWakeLock();
+
+                clearInterval(heartbeatTimer);
+                heartbeatTimer = setInterval(() => sendCommand('ping'), 15000);
+              }
+              applyDeckState(msg.state);
+            }
+          } catch {}
+        });
+
+        mqttClient.on('offline', () => { if (paired) setConnectionStatus(false); });
+        mqttClient.on('close', () => { if (paired) setConnectionStatus(false); });
       }
 
       function setConnectionStatus(online) {
         connDot.classList.toggle('offline', !online);
-        connLabel.textContent = online ? 'Connected' : 'Disconnected';
+        connLabel.textContent = online ? 'Connected' : 'Reconnecting...';
         reconnectBtn.classList.toggle('hidden', online);
       }
 
@@ -824,7 +797,6 @@
         remoteBlackoutBtn.classList.toggle('active', Boolean(deckState.blackout));
         remoteNotes.textContent = deckState.notes || 'No speaker notes for this slide.';
 
-        // Update Direct Link Bar & highlight on last slide
         if (deckState.redirectUrl) {
           remoteRedirectLabel.textContent = deckState.redirectUrl.replace(/^https?:\/\//i, '');
           const isLastSlide = deckState.totalSlides > 0 && deckState.currentSlide === deckState.totalSlides - 1;
@@ -836,18 +808,16 @@
       }
 
       function sendCommand(action, payload) {
-        if (!activeConn || !activeConn.open) {
-          setConnectionStatus(false);
-          return;
-        }
+        if (!mqttClient || !mqttClient.connected || !currentRoomCode) return;
         try {
-          activeConn.send({ type: 'command', action, payload });
-        } catch {
-          setConnectionStatus(false);
-        }
+          mqttClient.publish(
+            cmdTopic(currentRoomCode),
+            JSON.stringify({ remoteId, action, payload }),
+            { qos: 0 }
+          );
+        } catch {}
       }
 
-      // --- Direct Link Handlers ---
       function openRedirectModal() {
         mobileRedirectInput.value = deckState.redirectUrl || '';
         redirectModal.classList.remove('hidden');
@@ -890,27 +860,26 @@
         remoteRedirectLabel.textContent = 'Redirected presenter screen!';
       });
 
-      // --- Navigation & Pairing ---
       joinForm.addEventListener('submit', (e) => {
         e.preventDefault();
-        connectToRoom(roomInput.value);
+        connectToRoom(roomInput.value, 0, true);
       });
 
       reconnectBtn.addEventListener('click', () => {
-        if (currentRoomCode) connectToRoom(currentRoomCode);
+        if (currentRoomCode) connectToRoom(currentRoomCode, currentBrokerIdx, true);
       });
 
       disconnectBtn.addEventListener('click', () => {
-        clearTimeout(connectTimeoutId);
-        if (activeConn) {
-          try { activeConn.close(); } catch {}
-          activeConn = null;
-        }
+        sendCommand('leave');
+        cleanupMqtt();
         currentRoomCode = '';
+        paired = false;
         setLaserMode(false);
         remoteView.classList.add('hidden');
         connectView.classList.remove('hidden');
       });
+
+      window.addEventListener('beforeunload', () => sendCommand('leave'));
 
       remotePrevBtn.addEventListener('click', () => { haptic(20); sendCommand('prev'); });
       remoteNextBtn.addEventListener('click', () => { haptic(25); sendCommand('next'); });
@@ -985,13 +954,12 @@
         laserIndicator.style.left = `${x * 100}%`;
         laserIndicator.style.top = `${y * 100}%`;
         const now = performance.now();
-        if (now - lastLaserSent >= 28) {
+        if (now - lastLaserSent >= 45) {
           lastLaserSent = now;
           sendCommand('laser-move', { x, y });
         }
       }
 
-      // --- Stopwatch ---
       let elapsedSec = 0;
       let timerId = null;
 
@@ -1020,7 +988,6 @@
         renderTimer();
       });
 
-      // --- Slide Jump Modal ---
       slideJumpBtn.addEventListener('click', () => {
         if (!deckState.totalSlides) return;
         jumpGrid.innerHTML = '';
@@ -1043,12 +1010,12 @@
         if (e.target === jumpModal) jumpModal.classList.add('hidden');
       });
 
-      initPeer();
       const urlParams = new URLSearchParams(window.location.search);
       const initialRoom = (urlParams.get('room') || '').toUpperCase().trim();
+      const brokerParam = parseInt(urlParams.get('b') || '0', 10);
       if (initialRoom) {
         roomInput.value = initialRoom;
-        connectToRoom(initialRoom);
+        connectToRoom(initialRoom, Number.isFinite(brokerParam) ? brokerParam : 0, true);
       }
     })();
   </script>
