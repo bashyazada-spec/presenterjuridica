@@ -171,6 +171,7 @@
       background: var(--glass-2);
       border: 1px solid var(--border);
       color: #cbd5e1;
+      cursor: pointer;
     }
     .pulse-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--amber); }
     .status-pill.ready { border-color: rgba(34, 211, 238, 0.35); color: #67e8f9; }
@@ -192,6 +193,7 @@
       background: rgba(99, 102, 241, 0.14);
       border: 1px solid rgba(99, 102, 241, 0.35);
       color: #a5b4fc;
+      white-space: nowrap;
     }
 
     .workspace { flex: 1; display: flex; min-height: 0; }
@@ -464,30 +466,34 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 8px;
       margin-bottom: 6px;
     }
-    .code-actions { display: flex; align-items: center; gap: 6px; }
+    .code-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
     .panel h3 { font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #cbd5e1; }
     .panel-desc { font-size: 0.78rem; color: var(--muted); margin-bottom: 10px; line-height: 1.4; }
 
     .code-chip {
       font-family: 'JetBrains Mono', monospace;
-      font-size: 0.88rem;
+      font-size: 0.86rem;
       font-weight: 700;
-      letter-spacing: 0.12em;
+      letter-spacing: 0.1em;
       background: rgba(99, 102, 241, 0.18);
       color: #a5b4fc;
       padding: 4px 10px;
       border-radius: 8px;
       border: 1px solid rgba(99, 102, 241, 0.35);
+      white-space: nowrap;
     }
 
     .qr-box {
       background: #ffffff;
-      padding: 16px;
+      padding: 14px;
       border-radius: 14px;
       display: flex;
       justify-content: center;
+      align-items: center;
+      min-height: 204px;
       margin-bottom: 10px;
     }
     .qr-box img, .qr-box canvas { display: block; }
@@ -575,7 +581,7 @@
       <button class="btn btn-secondary" id="uploadTriggerBtn">Upload PPT / PDF</button>
       <button class="btn btn-secondary" id="blackoutBtn" disabled title="Shortcut: B">Black Screen</button>
       <button class="btn btn-primary" id="fullscreenBtn" disabled title="Shortcut: F">Present Fullscreen</button>
-      <div class="status-pill" id="remoteStatusPill">
+      <div class="status-pill" id="remoteStatusPill" title="Click to reconnect cloud">
         <span class="pulse-dot"></span>
         <span id="remoteStatusText">Connecting Cloud...</span>
       </div>
@@ -659,7 +665,7 @@
     <aside class="sidebar" id="sidebar">
       <div class="panel">
         <div class="panel-header">
-          <h3>Mobile Remote Pairing</h3>
+          <h3>Mobile Pairing</h3>
           <div class="code-actions">
             <span class="code-chip" id="roomCodeBig">------</span>
             <button class="btn btn-secondary btn-sm" id="newCodeBtn" title="New room code">↻</button>
@@ -722,23 +728,37 @@
     <p id="redirectOverlayUrl"></p>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/mqtt@4.3.7/dist/mqtt.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/pptxviewjs/dist/PptxViewJS.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-
   <script>
     (function () {
       'use strict';
 
-      if (window.pdfjsLib) {
-        const workerUrl = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-        const workerBlob = new Blob([`importScripts("${workerUrl}");`], {
-          type: 'application/javascript'
+      function sGet(k) { try { return sessionStorage.getItem(k); } catch { return null; } }
+      function sSet(k, v) { try { sessionStorage.setItem(k, v); } catch {} }
+      function lGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
+      function lSet(k, v) { try { localStorage.setItem(k, v); } catch {} }
+      function lDel(k) { try { localStorage.removeItem(k); } catch {} }
+
+      function loadScript(urls) {
+        const list = Array.isArray(urls) ? urls : [urls];
+        return new Promise((resolve, reject) => {
+          let i = 0;
+          function next() {
+            if (i >= list.length) {
+              reject(new Error('Failed to load: ' + list.join(', ')));
+              return;
+            }
+            const s = document.createElement('script');
+            s.src = list[i++];
+            s.async = true;
+            s.onload = () => resolve();
+            s.onerror = () => {
+              s.remove();
+              next();
+            };
+            document.head.appendChild(s);
+          }
+          next();
         });
-        window.pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(workerBlob);
       }
 
       const fileBadge = document.getElementById('fileBadge');
@@ -789,31 +809,9 @@
       const REDIRECT_STORAGE_KEY = 'slidesync_after_ppt_url';
       const BROKERS = [
         { name: 'EMQX', url: 'wss://broker.emqx.io:8084/mqtt' },
-        { name: 'HiveMQ', url: 'wss://broker.hivemq.com:8884/mqtt' }
+        { name: 'HiveMQ', url: 'wss://broker.hivemq.com:8884/mqtt' },
+        { name: 'Mosquitto', url: 'wss://test.mosquitto.org:8081' }
       ];
-
-      const state = {
-        roomCode: getOrCreateRoomCode(),
-        deckType: null,
-        fileName: null,
-        currentSlide: 0,
-        totalSlides: 0,
-        blackout: false,
-        notes: [],
-        redirectUrl: normalizeUrl(localStorage.getItem(REDIRECT_STORAGE_KEY) || ''),
-        pptxViewer: null,
-        pdfDoc: null,
-        imageSlides: [],
-        demoSlides: [],
-        isRendering: false
-      };
-
-      let mqttClient = null;
-      let brokerIndex = 0;
-      let cloudConnected = false;
-      let fallbackTimer = null;
-      let lastQrUrl = '';
-      const activeRemotes = new Map();
 
       function normalizeUrl(raw) {
         const trimmed = String(raw || '').trim();
@@ -829,28 +827,135 @@
         for (let i = 0; i < 6; i++) {
           code += chars[Math.floor(Math.random() * chars.length)];
         }
-        sessionStorage.setItem('slidesync_room_v2', code);
+        sSet('slidesync_room_v2', code);
         return code;
       }
 
       function getOrCreateRoomCode() {
-        const saved = sessionStorage.getItem('slidesync_room_v2');
+        const saved = sGet('slidesync_room_v2');
         if (saved && /^[A-Z0-9]{6}$/.test(saved)) return saved;
         return generateRoomCode();
       }
 
-      function cmdTopic() {
-        return `slidesync/v2/${state.roomCode}/cmd`;
-      }
-      function stateTopic() {
-        return `slidesync/v2/${state.roomCode}/state`;
+      const state = {
+        roomCode: getOrCreateRoomCode(),
+        deckType: null,
+        fileName: null,
+        currentSlide: 0,
+        totalSlides: 0,
+        blackout: false,
+        notes: [],
+        redirectUrl: normalizeUrl(lGet(REDIRECT_STORAGE_KEY) || ''),
+        pptxViewer: null,
+        pdfDoc: null,
+        imageSlides: [],
+        demoSlides: [],
+        isRendering: false
+      };
+
+      let mqttClient = null;
+      let brokerIndex = 0;
+      let cloudConnected = false;
+      let fallbackTimer = null;
+      let lastQrUrl = '';
+      const activeRemotes = new Map();
+
+      function cmdTopic() { return `slidesync/v2/${state.roomCode}/cmd`; }
+      function stateTopic() { return `slidesync/v2/${state.roomCode}/state`; }
+
+      function renderPairingQR(force = false) {
+        roomCodeBadge.textContent = `ROOM: ${state.roomCode}`;
+        roomCodeBig.textContent = state.roomCode;
+
+        const baseUrl =
+          window.location.protocol === 'file:'
+            ? 'https://your-site.vercel.app'
+            : window.location.origin;
+        const bQuery = brokerIndex > 0 ? `&b=${brokerIndex}` : '';
+        const url = `${baseUrl}/?room=${state.roomCode}${bQuery}`;
+
+        pairingUrlText.value = url;
+        previewRemoteLink.href = `remote.html?platform=mobile&room=${state.roomCode}${bQuery}`;
+
+        if (!force && url === lastQrUrl && qrContainer.children.length > 0) return;
+        lastQrUrl = url;
+
+        qrContainer.innerHTML = '';
+        if (window.QRCode) {
+          new window.QRCode(qrContainer, {
+            text: url,
+            width: 176,
+            height: 176,
+            colorDark: '#000000',
+            colorLight: '#ffffff',
+            correctLevel: window.QRCode.CorrectLevel.L
+          });
+        } else {
+          const img = document.createElement('img');
+          img.src = `https://api.qrserver.com/v1/create-qr-code/?size=176x176&data=${encodeURIComponent(url)}`;
+          img.width = 176;
+          img.height = 176;
+          img.alt = 'Pairing QR Code';
+          qrContainer.appendChild(img);
+        }
       }
 
-      function connectCloudBroker(idx = 0) {
+      renderPairingQR(true);
+
+      loadScript([
+        'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js',
+        'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js'
+      ])
+        .then(() => renderPairingQR(true))
+        .catch(() => {});
+
+      const mqttReady = loadScript([
+        'https://cdn.jsdelivr.net/npm/mqtt@4.3.7/dist/mqtt.min.js',
+        'https://unpkg.com/mqtt@4.3.7/dist/mqtt.min.js'
+      ]).catch(() => null);
+
+      const pdfReady = loadScript([
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+        'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js'
+      ])
+        .then(() => {
+          if (window.pdfjsLib) {
+            try {
+              const workerUrl = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+              const workerBlob = new Blob([`importScripts("${workerUrl}");`], {
+                type: 'application/javascript'
+              });
+              window.pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(workerBlob);
+            } catch {}
+          }
+        })
+        .catch(() => null);
+
+      const pptxReady = loadScript([
+        'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js',
+        'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'
+      ])
+        .then(() =>
+          loadScript([
+            'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js',
+            'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js'
+          ]).catch(() => {})
+        )
+        .then(() =>
+          loadScript([
+            'https://cdn.jsdelivr.net/npm/pptxviewjs/dist/PptxViewJS.min.js',
+            'https://unpkg.com/pptxviewjs/dist/PptxViewJS.min.js'
+          ])
+        )
+        .catch(() => null);
+
+      async function connectCloudBroker(idx = 0) {
         renderPairingQR();
+        remoteStatusText.textContent = 'Loading Cloud...';
+        await mqttReady;
 
         if (!window.mqtt) {
-          remoteStatusText.textContent = 'Cloud Script Offline';
+          remoteStatusText.textContent = 'Cloud Blocked (Retry)';
           return;
         }
 
@@ -864,40 +969,42 @@
         cloudConnected = false;
         activeRemotes.clear();
         updateRemoteStatus();
+        renderPairingQR();
 
         const broker = BROKERS[brokerIndex];
-        const clientId = `ss-host-${state.roomCode}-${Math.random().toString(36).slice(2, 7)}`;
+        remoteStatusText.textContent = `Connecting (${broker.name})...`;
 
+        const clientId = `ss-host-${state.roomCode}-${Math.random().toString(36).slice(2, 7)}`;
         mqttClient = window.mqtt.connect(broker.url, {
           clientId,
           clean: true,
           keepalive: 25,
-          reconnectPeriod: 2000,
+          reconnectPeriod: 2500,
           connectTimeout: 5000
         });
 
         fallbackTimer = setTimeout(() => {
-          if (!cloudConnected && brokerIndex < BROKERS.length - 1) {
-            connectCloudBroker(brokerIndex + 1);
+          if (!cloudConnected) {
+            if (brokerIndex < BROKERS.length - 1) {
+              connectCloudBroker(brokerIndex + 1);
+            } else {
+              remoteStatusText.textContent = 'Cloud Offline (Retry)';
+            }
           }
-        }, 5000);
+        }, 5500);
 
         mqttClient.on('connect', () => {
           clearTimeout(fallbackTimer);
           cloudConnected = true;
           updateRemoteStatus();
           renderPairingQR();
-
-          mqttClient.subscribe(cmdTopic(), { qos: 0 }, () => {
-            broadcastState();
-          });
+          mqttClient.subscribe(cmdTopic(), { qos: 0 }, () => broadcastState());
         });
 
         mqttClient.on('message', (topic, message) => {
           if (topic !== cmdTopic()) return;
           try {
-            const msg = JSON.parse(message.toString());
-            handleRemoteMessage(msg);
+            handleRemoteMessage(JSON.parse(message.toString()));
           } catch {}
         });
 
@@ -911,6 +1018,10 @@
           updateRemoteStatus();
         });
       }
+
+      remoteStatusPill.addEventListener('click', () => {
+        if (!cloudConnected) connectCloudBroker(0);
+      });
 
       setInterval(() => {
         const now = Date.now();
@@ -991,36 +1102,6 @@
         }
       }
 
-      function renderPairingQR() {
-        roomCodeBadge.textContent = `ROOM: ${state.roomCode}`;
-        roomCodeBig.textContent = state.roomCode;
-
-        const baseUrl =
-          window.location.protocol === 'file:'
-            ? 'https://your-site.vercel.app'
-            : window.location.origin;
-        const bQuery = brokerIndex > 0 ? `&b=${brokerIndex}` : '';
-        const url = `${baseUrl}/?room=${state.roomCode}${bQuery}`;
-
-        pairingUrlText.value = url;
-        previewRemoteLink.href = `remote.html?platform=mobile&room=${state.roomCode}${bQuery}`;
-
-        if (url === lastQrUrl && qrContainer.children.length > 0) return;
-        lastQrUrl = url;
-
-        qrContainer.innerHTML = '';
-        if (window.QRCode) {
-          new window.QRCode(qrContainer, {
-            text: url,
-            width: 184,
-            height: 184,
-            colorDark: '#000000',
-            colorLight: '#ffffff',
-            correctLevel: window.QRCode.CorrectLevel.L
-          });
-        }
-      }
-
       newCodeBtn.addEventListener('click', () => {
         state.roomCode = generateRoomCode();
         lastQrUrl = '';
@@ -1053,8 +1134,8 @@
       function setRedirectUrl(rawUrl) {
         const clean = normalizeUrl(rawUrl);
         state.redirectUrl = clean;
-        if (clean) localStorage.setItem(REDIRECT_STORAGE_KEY, clean);
-        else localStorage.removeItem(REDIRECT_STORAGE_KEY);
+        if (clean) lSet(REDIRECT_STORAGE_KEY, clean);
+        else lDel(REDIRECT_STORAGE_KEY);
         updateRedirectUI();
         broadcastState();
       }
@@ -1078,14 +1159,10 @@
       function triggerSiteRedirect(rawUrl) {
         const target = normalizeUrl(rawUrl || state.redirectUrl);
         if (!target) return;
-
         redirectOverlayUrl.textContent = target;
         redirectOverlay.classList.remove('hidden');
-
         setTimeout(() => {
-          if (mqttClient) {
-            try { mqttClient.end(true); } catch {}
-          }
+          if (mqttClient) { try { mqttClient.end(true); } catch {} }
           window.location.href = target;
         }, 450);
       }
@@ -1133,14 +1210,19 @@
       }
 
       async function loadPptxFile(file) {
-        if (!window.PptxViewJS) {
-          alert('PPTX viewer library is still loading or blocked.');
-          return;
-        }
         resetDeck();
         fileBadge.textContent = `Loading ${file.name}...`;
-        dropStatus.textContent = `Rendering ${file.name}...`;
+        dropStatus.textContent = `Preparing PPTX renderer for ${file.name}...`;
         dropStatus.classList.remove('hidden');
+
+        await pptxReady;
+
+        if (!window.PptxViewJS) {
+          fileBadge.textContent = 'No presentation loaded';
+          dropStatus.classList.add('hidden');
+          alert('PPTX viewer could not load from CDN. Try exporting your slides to .pdf or uploading slide images.');
+          return;
+        }
 
         try {
           const buffer = await file.arrayBuffer();
@@ -1234,9 +1316,388 @@
       }
 
       async function loadPdfFile(file) {
-        if (!window.pdfjsLib) {
-          alert('PDF.js failed to load.');
-          return;
-        }
         resetDeck();
         fileBadge.textContent = `Loading ${file.name}...`;
+        dropStatus.textContent = `Preparing PDF renderer for ${file.name}...`;
+        dropStatus.classList.remove('hidden');
+
+        await pdfReady;
+
+        if (!window.pdfjsLib) {
+          fileBadge.textContent = 'No presentation loaded';
+          dropStatus.classList.add('hidden');
+          alert('PDF viewer could not load. Please check your internet connection.');
+          return;
+        }
+
+        try {
+          const buffer = await file.arrayBuffer();
+          const pdfDoc = await window.pdfjsLib.getDocument({ data: buffer }).promise;
+          state.deckType = 'pdf';
+          state.pdfDoc = pdfDoc;
+          state.fileName = file.name;
+          state.totalSlides = pdfDoc.numPages;
+          state.currentSlide = 0;
+          state.notes = [];
+          showStage();
+          await renderCurrentSlide();
+        } catch (err) {
+          console.error(err);
+          fileBadge.textContent = 'Load failed';
+          dropStatus.classList.add('hidden');
+          alert('Could not open this PDF file.');
+        }
+      }
+
+      async function loadImageFiles(files) {
+        resetDeck();
+        const sorted = files
+          .filter((f) => /\.(png|jpe?g|webp)$/i.test(f.name))
+          .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+        if (!sorted.length) return;
+        state.deckType = 'images';
+        state.fileName = sorted.length === 1 ? sorted[0].name : `${sorted.length} Image Slides`;
+        state.imageSlides = sorted.map((f) => URL.createObjectURL(f));
+        state.totalSlides = state.imageSlides.length;
+        state.currentSlide = 0;
+        state.notes = [];
+        showStage();
+        await renderCurrentSlide();
+      }
+
+      loadSampleBtn.addEventListener('click', async () => {
+        resetDeck();
+        state.deckType = 'demo';
+        state.fileName = 'SlideSync_Studio_Demo.pptx';
+        state.demoSlides = [
+          {
+            c1: '#0f172a',
+            c2: '#1e1b4b',
+            accent: '#818cf8',
+            tag: '01 • PRESENTER ON INDEX',
+            title: 'Upload & Present Instantly',
+            bullets: [
+              'Desktop users land directly on the Upload & Present studio',
+              'Mobile devices automatically route straight to remote.html',
+              'Pairs reliably over Wi-Fi or 4G/5G via secure cloud WebSockets'
+            ],
+            note: 'Welcome! Point out that you only need to share the main URL—phones route automatically.'
+          },
+          {
+            c1: '#082f49',
+            c2: '#0f172a',
+            accent: '#22d3ee',
+            tag: '02 • WIRELESS REMOTE',
+            title: 'Full Control From Your Phone',
+            bullets: [
+              'Live slide thumbnail & private speaker notes synced per slide',
+              'Touch-drag Red Laser Pointer highlights key details live',
+              'Black Screen mode, slide jumper grid & built-in timer'
+            ],
+            note: 'Try enabling Laser Pointer on your phone and dragging across the preview card.'
+          },
+          {
+            c1: '#3b0764',
+            c2: '#0f172a',
+            accent: '#e879f9',
+            tag: '03 • AFTER PRESENTATION',
+            title: 'Direct Link After Your Slides',
+            bullets: [
+              'Paste any website or form link in the "After-PPT Direct Link" box',
+              'At the end of your talk, tap "Open Link ↗" on your remote',
+              'This screen automatically jumps straight to your destination URL!'
+            ],
+            note: 'Final slide! Tap "Open Link" on the mobile remote to redirect this screen to your URL.'
+          }
+        ];
+        state.notes = state.demoSlides.map((s) => s.note);
+        state.totalSlides = state.demoSlides.length;
+        state.currentSlide = 0;
+        showStage();
+        await renderCurrentSlide();
+      });
+
+      function resetDeck() {
+        state.imageSlides.forEach((url) => URL.revokeObjectURL(url));
+        state.imageSlides = [];
+        state.pdfDoc = null;
+        state.pptxViewer = null;
+        state.demoSlides = [];
+        state.notes = [];
+        state.currentSlide = 0;
+        state.totalSlides = 0;
+        toggleBlackout(false);
+      }
+
+      function showStage() {
+        dropStatus.classList.add('hidden');
+        dropZone.classList.add('hidden');
+        stageWrapper.classList.remove('hidden');
+        fileBadge.textContent = state.fileName;
+        blackoutBtn.disabled = false;
+        fullscreenBtn.disabled = false;
+        buildSlideJumpGrid();
+      }
+
+      function buildSlideJumpGrid() {
+        slideSelectList.innerHTML = '';
+        for (let i = 0; i < state.totalSlides; i++) {
+          const btn = document.createElement('button');
+          btn.className = 'jump-pill';
+          btn.textContent = i + 1;
+          btn.addEventListener('click', () => goToSlide(i));
+          slideSelectList.appendChild(btn);
+        }
+      }
+
+      async function goToSlide(targetIndex) {
+        if (state.totalSlides === 0 || state.isRendering) return;
+        const clamped = Math.max(0, Math.min(state.totalSlides - 1, targetIndex));
+        if (clamped === state.currentSlide) return;
+
+        state.isRendering = true;
+        try {
+          if (state.deckType === 'pptx' && state.pptxViewer) {
+            const v = state.pptxViewer;
+            if (clamped === state.currentSlide + 1 && typeof v.nextSlide === 'function') {
+              await v.nextSlide();
+            } else if (clamped === state.currentSlide - 1 && typeof v.previousSlide === 'function') {
+              await v.previousSlide();
+            } else if (typeof v.goToSlide === 'function') {
+              await v.goToSlide(clamped);
+            } else if (typeof v.renderSlide === 'function') {
+              await v.renderSlide(clamped, slideCanvas);
+            }
+            state.currentSlide =
+              typeof v.getCurrentSlideIndex === 'function' ? v.getCurrentSlideIndex() : clamped;
+            syncAfterRender();
+          } else {
+            state.currentSlide = clamped;
+            await renderCurrentSlide();
+          }
+        } catch (err) {
+          console.error(err);
+        } finally {
+          state.isRendering = false;
+        }
+      }
+
+      async function renderCurrentSlide() {
+        const ctx = slideCanvas.getContext('2d');
+        if (state.deckType === 'pdf' && state.pdfDoc) {
+          const page = await state.pdfDoc.getPage(state.currentSlide + 1);
+          const baseViewport = page.getViewport({ scale: 1 });
+          const viewport = page.getViewport({ scale: 1600 / baseViewport.width });
+          slideCanvas.width = viewport.width;
+          slideCanvas.height = viewport.height;
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, slideCanvas.width, slideCanvas.height);
+          await page.render({ canvasContext: ctx, viewport }).promise;
+        } else if (state.deckType === 'images') {
+          const img = await loadImage(state.imageSlides[state.currentSlide]);
+          slideCanvas.width = 1280;
+          slideCanvas.height = 720;
+          ctx.fillStyle = '#000000';
+          ctx.fillRect(0, 0, 1280, 720);
+          const scale = Math.min(1280 / img.width, 720 / img.height);
+          const w = img.width * scale;
+          const h = img.height * scale;
+          ctx.drawImage(img, (1280 - w) / 2, (720 - h) / 2, w, h);
+        } else if (state.deckType === 'demo') {
+          drawDemoSlide(ctx, state.demoSlides[state.currentSlide], state.currentSlide + 1);
+        }
+        syncAfterRender();
+      }
+
+      function loadImage(src) {
+        return new Promise((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.onerror = reject;
+          img.src = src;
+        });
+      }
+
+      function drawRoundedRect(ctx, x, y, w, h, r) {
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.arcTo(x + w, y, x + w, y + h, r);
+        ctx.arcTo(x + w, y + h, x, y + h, r);
+        ctx.arcTo(x, y + h, x, y, r);
+        ctx.arcTo(x, y, x + w, y, r);
+        ctx.closePath();
+      }
+
+      function drawDemoSlide(ctx, slide, num) {
+        slideCanvas.width = 1280;
+        slideCanvas.height = 720;
+
+        const grad = ctx.createLinearGradient(0, 0, 1280, 720);
+        grad.addColorStop(0, slide.c1);
+        grad.addColorStop(1, slide.c2);
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, 1280, 720);
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+        for (let gx = 40; gx < 1280; gx += 48) {
+          for (let gy = 40; gy < 720; gy += 48) {
+            ctx.fillRect(gx, gy, 2, 2);
+          }
+        }
+
+        const orb = ctx.createRadialGradient(1080, 140, 20, 1080, 140, 320);
+        orb.addColorStop(0, slide.accent + '44');
+        orb.addColorStop(1, 'transparent');
+        ctx.fillStyle = orb;
+        ctx.fillRect(700, 0, 580, 500);
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+        ctx.lineWidth = 2;
+        drawRoundedRect(ctx, 72, 72, 1136, 576, 28);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = slide.accent + '28';
+        drawRoundedRect(ctx, 120, 118, 300, 38, 19);
+        ctx.fill();
+
+        ctx.fillStyle = slide.accent;
+        ctx.font = '700 17px Inter, system-ui, sans-serif';
+        ctx.fillText(slide.tag, 142, 143);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '800 58px Inter, system-ui, sans-serif';
+        ctx.fillText(slide.title, 120, 226);
+
+        ctx.fillStyle = slide.accent;
+        drawRoundedRect(ctx, 120, 252, 92, 6, 3);
+        ctx.fill();
+
+        ctx.font = '500 30px Inter, system-ui, sans-serif';
+        slide.bullets.forEach((line, idx) => {
+          const y = 342 + idx * 78;
+          ctx.fillStyle = slide.accent;
+          ctx.beginPath();
+          ctx.arc(134, y - 10, 7, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = '#e2e8f0';
+          ctx.fillText(line, 162, y);
+        });
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.font = '600 18px Inter, system-ui, sans-serif';
+        ctx.fillText(`SLIDESYNC STUDIO  •  SLIDE ${num} OF ${state.totalSlides}`, 120, 598);
+      }
+
+      function syncAfterRender() {
+        slideCounter.textContent = `${state.currentSlide + 1} / ${state.totalSlides}`;
+        prevSlideBtn.disabled = state.currentSlide <= 0;
+        nextSlideBtn.disabled = state.currentSlide >= state.totalSlides - 1;
+        progressFill.style.width = `${((state.currentSlide + 1) / state.totalSlides) * 100}%`;
+
+        Array.from(slideSelectList.children).forEach((btn, idx) => {
+          btn.classList.toggle('active', idx === state.currentSlide);
+        });
+
+        notesDisplay.textContent = state.notes[state.currentSlide] || 'No speaker notes for this slide.';
+        broadcastState();
+      }
+
+      function capturePreviewDataUrl() {
+        if (!state.totalSlides || slideCanvas.width === 0 || slideCanvas.height === 0) return null;
+        try {
+          const thumbW = 360;
+          const thumbH = Math.max(100, Math.round(thumbW * (slideCanvas.height / slideCanvas.width)));
+          const offscreen = document.createElement('canvas');
+          offscreen.width = thumbW;
+          offscreen.height = thumbH;
+          offscreen.getContext('2d').drawImage(slideCanvas, 0, 0, thumbW, thumbH);
+          return offscreen.toDataURL('image/jpeg', 0.6);
+        } catch {
+          return null;
+        }
+      }
+
+      function buildSerializableState(includePreview) {
+        return {
+          fileName: state.fileName,
+          currentSlide: state.currentSlide,
+          totalSlides: state.totalSlides,
+          blackout: state.blackout,
+          notes: state.notes[state.currentSlide] || '',
+          redirectUrl: state.redirectUrl,
+          previewDataUrl: includePreview ? capturePreviewDataUrl() : null
+        };
+      }
+
+      function broadcastState() {
+        if (!mqttClient || !cloudConnected) return;
+        const payload = JSON.stringify({
+          type: 'state',
+          brokerIndex,
+          state: buildSerializableState(true)
+        });
+        try { mqttClient.publish(stateTopic(), payload, { qos: 0 }); } catch {}
+      }
+
+      prevSlideBtn.addEventListener('click', () => goToSlide(state.currentSlide - 1));
+      nextSlideBtn.addEventListener('click', () => goToSlide(state.currentSlide + 1));
+
+      function toggleBlackout(forceState) {
+        state.blackout = typeof forceState === 'boolean' ? forceState : !state.blackout;
+        blackoutOverlay.classList.toggle('hidden', !state.blackout);
+        blackoutBtn.classList.toggle('active', state.blackout);
+        stageBlackoutBtn.classList.toggle('active', state.blackout);
+        broadcastState();
+      }
+
+      blackoutBtn.addEventListener('click', () => toggleBlackout());
+      stageBlackoutBtn.addEventListener('click', () => toggleBlackout());
+
+      async function requestStageFullscreen(fromRemote = false) {
+        if (!state.totalSlides) return;
+        try {
+          if (document.fullscreenElement) await document.exitFullscreen();
+          else await stageWrapper.requestFullscreen();
+        } catch {
+          if (fromRemote) showToast('Remote requested Fullscreen — press F or click "Present Fullscreen".');
+        }
+      }
+
+      function showToast(msg) {
+        fullscreenToast.textContent = msg;
+        fullscreenToast.classList.remove('hidden');
+        setTimeout(() => fullscreenToast.classList.add('hidden'), 3500);
+      }
+
+      fullscreenBtn.addEventListener('click', () => requestStageFullscreen(false));
+      stageFullscreenBtn.addEventListener('click', () => requestStageFullscreen(false));
+      toggleSidebarBtn.addEventListener('click', () => sidebar.classList.toggle('collapsed'));
+
+      document.addEventListener('keydown', (e) => {
+        if (!state.totalSlides) return;
+        if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+
+        if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
+          e.preventDefault();
+          goToSlide(state.currentSlide + 1);
+        } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+          e.preventDefault();
+          goToSlide(state.currentSlide - 1);
+        } else if (e.key.toLowerCase() === 'f') {
+          e.preventDefault();
+          requestStageFullscreen(false);
+        } else if (e.key.toLowerCase() === 'b') {
+          e.preventDefault();
+          toggleBlackout();
+        }
+      });
+
+      updateRedirectUI();
+      connectCloudBroker(0);
+    })();
+  </script>
+</body>
+</html>
