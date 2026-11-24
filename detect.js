@@ -8,23 +8,19 @@
   };
 
   function isMobileDevice() {
-    // 1. User-Agent Client Hints
     if (navigator.userAgentData && typeof navigator.userAgentData.mobile === 'boolean') {
       if (navigator.userAgentData.mobile) return true;
     }
 
-    // 2. Mobile & Tablet User-Agent check
     const ua = navigator.userAgent || navigator.vendor || global.opera || '';
     if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobi/i.test(ua)) {
       return true;
     }
 
-    // 3. iPadOS 13+ desktop UA spoofing check
     if (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) {
       return true;
     }
 
-    // 4. Touch-first device check
     const hasCoarsePointer =
       typeof global.matchMedia === 'function' &&
       global.matchMedia('(pointer: coarse)').matches;
@@ -34,7 +30,6 @@
     );
     if (hasCoarsePointer && screenWidth <= 900) return true;
 
-    // 5. Phone-width viewport fallback
     if (global.innerWidth > 0 && global.innerWidth <= 640) return true;
 
     return false;
