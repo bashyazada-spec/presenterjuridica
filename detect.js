@@ -7,6 +7,9 @@
     desktop: 'index.html'
   };
 
+  function safeGet(k) { try { return sessionStorage.getItem(k); } catch { return null; } }
+  function safeSet(k, v) { try { sessionStorage.setItem(k, v); } catch {} }
+
   function isMobileDevice() {
     if (navigator.userAgentData && typeof navigator.userAgentData.mobile === 'boolean') {
       if (navigator.userAgentData.mobile) return true;
@@ -29,7 +32,6 @@
       global.screen?.width || Infinity
     );
     if (hasCoarsePointer && screenWidth <= 900) return true;
-
     if (global.innerWidth > 0 && global.innerWidth <= 640) return true;
 
     return false;
@@ -50,7 +52,7 @@
 
     const forced = (params.get('platform') || '').toLowerCase();
     if (forced === 'mobile' || forced === 'desktop') {
-      sessionStorage.setItem(OVERRIDE_KEY, forced);
+      safeSet(OVERRIDE_KEY, forced);
       if (forced !== expectedPlatform) {
         global.location.replace(getTargetUrl(forced));
         return true;
@@ -58,7 +60,7 @@
       return false;
     }
 
-    if (sessionStorage.getItem(OVERRIDE_KEY) === expectedPlatform) {
+    if (safeGet(OVERRIDE_KEY) === expectedPlatform) {
       return false;
     }
 
