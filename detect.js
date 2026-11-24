@@ -1,62 +1,85 @@
 (function (global) {
   'use strict';
 
+  const OVERRIDE_KEY = 'slidesync_platform_override';
   const ROUTES = {
     mobile: 'remote.html',
-    desktop: 'presenter.html'
+    desktop: 'index.html'
   };
 
   function isMobileDevice() {
-    // 1. Modern User-Agent Client Hints
+    // 1. User-Agent Client Hints
     if (navigator.userAgentData && typeof navigator.userAgentData.mobile === 'boolean') {
       if (navigator.userAgentData.mobile) return true;
     }
 
     // 2. Mobile & Tablet User-Agent check
     const ua = navigator.userAgent || navigator.vendor || global.opera || '';
-    const mobileUARegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobi/i;
-    if (mobileUARegex.test(ua)) return true;
+    if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobi/i.test(ua)) {
+      return true;
+    }
 
-    // 3. iPadOS 13+ desktop-spoofed UA detection
-    if (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) return true;
+    // 3. iPadOS 13+ desktop UA spoofing check
+    if (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) {
+      return true;
+    }
 
-    // 4. Touch-first small screen fallback
+    // 4. Touch-first device check
     const hasCoarsePointer =
       typeof global.matchMedia === 'function' &&
       global.matchMedia('(pointer: coarse)').matches;
-    const screenWidth = Math.min(global.innerWidth || Infinity, global.screen?.width || Infinity);
+    const screenWidth = Math.min(
+      global.innerWidth || Infinity,
+      global.screen?.width || Infinity
+    );
     if (hasCoarsePointer && screenWidth <= 900) return true;
+
+    // 5. Phone-width viewport fallback
+    if (global.innerWidth > 0 && global.innerWidth <= 640) return true;
 
     return false;
   }
 
-  function getTargetUrl() {
-    const params = new URLSearchParams(global.location.search);
-    const forced = (params.get('platform') || '').toLowerCase();
-
-    let targetBase;
-    if (forced === 'mobile') {
-      targetBase = ROUTES.mobile;
-    } else if (forced === 'desktop') {
-      targetBase = ROUTES.desktop;
-    } else {
-      targetBase = isMobileDevice() ? ROUTES.mobile : ROUTES.desktop;
-    }
-
-    return targetBase + global.location.search + global.location.hash;
+  function detectPlatform() {
+    return isMobileDevice() ? 'mobile' : 'desktop';
   }
 
-  function autoRedirect() {
+  function getTargetUrl(platform) {
+    const base = platform === 'mobile' ? ROUTES.mobile : ROUTES.desktop;
+    return base + global.location.search + global.location.hash;
+  }
+
+  function enforcePlatform(expectedPlatform) {
     const params = new URLSearchParams(global.location.search);
     if (params.get('redirect') === 'false') return false;
 
-    global.location.replace(getTargetUrl());
-    return true;
+    const forced = (params.get('platform') || '').toLowerCase();
+    if (forced === 'mobile' || forced === 'desktop') {
+      sessionStorage.setItem(OVERRIDE_KEY, forced);
+      if (forced !== expectedPlatform) {
+        global.location.replace(getTargetUrl(forced));
+        return true;
+      }
+      return false;
+    }
+
+    if (sessionStorage.getItem(OVERRIDE_KEY) === expectedPlatform) {
+      return false;
+    }
+
+    const detected = detectPlatform();
+    if (detected !== expectedPlatform) {
+      global.location.replace(getTargetUrl(detected));
+      return true;
+    }
+
+    return false;
   }
 
   global.PlatformDetector = {
     isMobileDevice,
+    detectPlatform,
     getTargetUrl,
-    autoRedirect
+    enforcePlatform
   };
 })(window);
