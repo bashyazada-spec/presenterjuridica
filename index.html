@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SlideSync — Desktop Presenter Studio</title>
-  <!-- Auto-redirect mobile visitors directly to remote.html -->
   <script src="js/detect.js"></script>
   <script>
     window.PlatformDetector.enforcePlatform('desktop');
@@ -52,7 +51,6 @@
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.25); border-radius: 999px; }
 
-    /* Top Bar */
     .topbar {
       height: 64px;
       padding: 0 22px;
@@ -187,7 +185,6 @@
       color: #a5b4fc;
     }
 
-    /* Main Workspace */
     .workspace { flex: 1; display: flex; min-height: 0; }
     .stage-area {
       flex: 1;
@@ -199,7 +196,6 @@
       min-width: 0;
     }
 
-    /* Drop Zone */
     .drop-zone {
       width: 100%;
       max-width: 660px;
@@ -269,7 +265,6 @@
     .drop-hint { margin-top: 16px; font-size: 0.76rem; color: #64748b; }
     .drop-hint code { background: rgba(255, 255, 255, 0.06); padding: 2px 6px; border-radius: 4px; color: #94a3b8; }
 
-    /* Stage */
     .stage-wrapper {
       width: 100%;
       height: 100%;
@@ -373,7 +368,6 @@
     .redirect-overlay h3 { font-size: 1.5rem; font-weight: 800; }
     .redirect-overlay p { font-family: 'JetBrains Mono', monospace; color: #67e8f9; font-size: 0.95rem; }
 
-    /* Stage Controls */
     .stage-controls {
       display: flex;
       align-items: center;
@@ -436,7 +430,6 @@
       z-index: 30;
     }
 
-    /* Sidebar */
     .sidebar {
       width: 356px;
       background: var(--glass);
@@ -458,7 +451,6 @@
       padding: 14px;
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
     }
-
     .panel-header {
       display: flex;
       align-items: center;
@@ -466,14 +458,7 @@
       margin-bottom: 6px;
     }
     .code-actions { display: flex; align-items: center; gap: 6px; }
-
-    .panel h3 {
-      font-size: 0.82rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: #cbd5e1;
-    }
+    .panel h3 { font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #cbd5e1; }
     .panel-desc { font-size: 0.78rem; color: var(--muted); margin-bottom: 10px; line-height: 1.4; }
 
     .code-chip {
@@ -548,11 +533,7 @@
       cursor: pointer;
     }
     .jump-pill:hover { color: var(--text); border-color: var(--primary); }
-    .jump-pill.active {
-      background: linear-gradient(135deg, #4f46e5, #6366f1);
-      color: #fff;
-      border-color: transparent;
-    }
+    .jump-pill.active { background: linear-gradient(135deg, #4f46e5, #6366f1); color: #fff; border-color: transparent; }
 
     .sidebar-footer { margin-top: auto; display: flex; flex-direction: column; gap: 6px; padding-top: 4px; }
     .shortcuts-hint { font-size: 0.72rem; color: #64748b; }
@@ -625,7 +606,7 @@
         <div class="feature-strip">
           <div class="feature-item">
             <strong>QR Phone Pairing</strong>
-            <span>Auto-opens mobile remote</span>
+            <span>Works on Wi-Fi &amp; 4G/5G</span>
           </div>
           <div class="feature-item">
             <strong>Laser &amp; Notes</strong>
@@ -682,7 +663,6 @@
         </div>
       </div>
 
-      <!-- After-Presentation Direct Link Panel -->
       <div class="panel">
         <div class="panel-header">
           <h3>After-PPT Direct Link</h3>
@@ -720,7 +700,9 @@
 
       <div class="sidebar-footer">
         <span class="shortcuts-hint">Keys: ← → Space Navigate • F Fullscreen • B Blackout</span>
-        <a href="remote.html?platform=mobile" class="switch-link">Preview Mobile Remote →</a>
+        <a id="previewRemoteLink" href="remote.html?platform=mobile" target="_blank" class="switch-link">
+          Test Mobile Remote (New Tab) →
+        </a>
       </div>
     </aside>
   </main>
@@ -730,7 +712,8 @@
     <p id="redirectOverlayUrl"></p>
   </div>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js"></script>
+  <!-- MQTT over WSS + Presentation Libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/mqtt@4.3.7/dist/mqtt.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/pptxviewjs/dist/PptxViewJS.min.js"></script>
@@ -779,6 +762,7 @@
       const qrContainer = document.getElementById('qrcode');
       const pairingUrlText = document.getElementById('pairingUrlText');
       const copyUrlBtn = document.getElementById('copyUrlBtn');
+      const previewRemoteLink = document.getElementById('previewRemoteLink');
 
       const redirectUrlInput = document.getElementById('redirectUrlInput');
       const saveRedirectBtn = document.getElementById('saveRedirectBtn');
@@ -793,15 +777,11 @@
       const sidebar = document.getElementById('sidebar');
       const toggleSidebarBtn = document.getElementById('toggleSidebarBtn');
 
-      const PEER_PREFIX = 'slidesync-';
       const REDIRECT_STORAGE_KEY = 'slidesync_after_ppt_url';
-      const ICE_CONFIG = {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun.cloudflare.com:3478' }
-        ]
-      };
+      const BROKERS = [
+        { name: 'EMQX', url: 'wss://broker.emqx.io:8084/mqtt' },
+        { name: 'HiveMQ', url: 'wss://broker.hivemq.com:8884/mqtt' }
+      ];
 
       const state = {
         roomCode: getOrCreateRoomCode(),
@@ -819,9 +799,11 @@
         isRendering: false
       };
 
-      let peer = null;
-      let signalingReady = false;
-      const remoteConnections = new Map();
+      let mqttClient = null;
+      let brokerIndex = 0;
+      let cloudConnected = false;
+      let fallbackTimer = null;
+      const activeRemotes = new Map(); // remoteId -> lastSeenTimestamp
 
       function normalizeUrl(raw) {
         const trimmed = String(raw || '').trim();
@@ -847,7 +829,205 @@
         return generateRoomCode();
       }
 
-      // --- Post-PPT Direct Link Controls ---
+      function cmdTopic() {
+        return `slidesync/v2/${state.roomCode}/cmd`;
+      }
+      function stateTopic() {
+        return `slidesync/v2/${state.roomCode}/state`;
+      }
+
+      // --- Dual-Broker WSS MQTT Host (Works over Wi-Fi, 4G/5G & Strict Firewalls) ---
+      function connectCloudBroker(idx = 0) {
+        if (!window.mqtt) {
+          remoteStatusText.textContent = 'Network Script Missing';
+          return;
+        }
+
+        clearTimeout(fallbackTimer);
+        if (mqttClient) {
+          try { mqttClient.end(true); } catch {}
+          mqttClient = null;
+        }
+
+        brokerIndex = idx % BROKERS.length;
+        cloudConnected = false;
+        activeRemotes.clear();
+        updateRemoteStatus();
+        renderPairingQR();
+
+        const broker = BROKERS[brokerIndex];
+        const clientId = `ss-host-${state.roomCode}-${Math.random().toString(36).slice(2, 7)}`;
+
+        mqttClient = window.mqtt.connect(broker.url, {
+          clientId,
+          clean: true,
+          keepalive: 25,
+          reconnectPeriod: 2000,
+          connectTimeout: 5000
+        });
+
+        // If primary broker fails to connect within 5s, failover to secondary
+        fallbackTimer = setTimeout(() => {
+          if (!cloudConnected && brokerIndex < BROKERS.length - 1) {
+            connectCloudBroker(brokerIndex + 1);
+          }
+        }, 5000);
+
+        mqttClient.on('connect', () => {
+          clearTimeout(fallbackTimer);
+          cloudConnected = true;
+          updateRemoteStatus();
+          renderPairingQR();
+
+          mqttClient.subscribe(cmdTopic(), { qos: 0 }, () => {
+            // Announce state in case a remote is already waiting
+            broadcastState();
+          });
+        });
+
+        mqttClient.on('message', (topic, message) => {
+          if (topic !== cmdTopic()) return;
+          try {
+            const msg = JSON.parse(message.toString());
+            handleRemoteMessage(msg);
+          } catch {}
+        });
+
+        mqttClient.on('offline', () => {
+          cloudConnected = false;
+          updateRemoteStatus();
+        });
+
+        mqttClient.on('close', () => {
+          cloudConnected = false;
+          updateRemoteStatus();
+        });
+      }
+
+      // Prune stale remotes that stopped pinging (> 40s)
+      setInterval(() => {
+        const now = Date.now();
+        let changed = false;
+        activeRemotes.forEach((ts, id) => {
+          if (now - ts > 40000) {
+            activeRemotes.delete(id);
+            changed = true;
+          }
+        });
+        if (changed) updateRemoteStatus();
+      }, 10000);
+
+      function handleRemoteMessage(msg) {
+        if (!msg || !msg.action) return;
+
+        if (msg.remoteId) {
+          if (msg.action === 'leave') {
+            activeRemotes.delete(msg.remoteId);
+            updateRemoteStatus();
+            return;
+          }
+          const isNew = !activeRemotes.has(msg.remoteId);
+          activeRemotes.set(msg.remoteId, Date.now());
+          if (isNew) updateRemoteStatus();
+        }
+
+        switch (msg.action) {
+          case 'join':
+          case 'ping':
+            broadcastState();
+            break;
+          case 'next':
+            goToSlide(state.currentSlide + 1);
+            break;
+          case 'prev':
+            goToSlide(state.currentSlide - 1);
+            break;
+          case 'goto':
+            if (typeof msg.payload?.index === 'number') goToSlide(msg.payload.index);
+            break;
+          case 'blackout':
+            toggleBlackout(typeof msg.payload?.active === 'boolean' ? msg.payload.active : undefined);
+            break;
+          case 'fullscreen':
+            requestStageFullscreen(true);
+            break;
+          case 'laser-move':
+            if (msg.payload && typeof msg.payload.x === 'number' && typeof msg.payload.y === 'number') {
+              laserDot.classList.remove('hidden');
+              laserDot.style.left = `${Math.max(0, Math.min(1, msg.payload.x)) * 100}%`;
+              laserDot.style.top = `${Math.max(0, Math.min(1, msg.payload.y)) * 100}%`;
+            }
+            break;
+          case 'laser-end':
+            laserDot.classList.add('hidden');
+            break;
+          case 'set-redirect':
+            setRedirectUrl(msg.payload?.url || '');
+            break;
+          case 'redirect':
+            triggerSiteRedirect(msg.payload?.url || state.redirectUrl);
+            break;
+        }
+      }
+
+      function updateRemoteStatus() {
+        const count = activeRemotes.size;
+        remoteStatusPill.classList.remove('ready', 'connected');
+        if (count > 0) {
+          remoteStatusPill.classList.add('connected');
+          remoteStatusText.textContent = `${count} Remote${count > 1 ? 's' : ''} Paired`;
+        } else if (cloudConnected) {
+          remoteStatusPill.classList.add('ready');
+          remoteStatusText.textContent = 'Ready for Remote';
+        } else {
+          remoteStatusText.textContent = 'Connecting Cloud...';
+        }
+      }
+
+      function renderPairingQR() {
+        roomCodeBadge.textContent = `ROOM: ${state.roomCode}`;
+        roomCodeBig.textContent = state.roomCode;
+
+        const baseUrl =
+          window.location.protocol === 'file:'
+            ? 'https://your-site.vercel.app'
+            : window.location.origin;
+        const bQuery = brokerIndex > 0 ? `&b=${brokerIndex}` : '';
+        const url = `${baseUrl}/?room=${state.roomCode}${bQuery}`;
+
+        pairingUrlText.value = url;
+        previewRemoteLink.href = `remote.html?platform=mobile&room=${state.roomCode}${bQuery}`;
+
+        qrContainer.innerHTML = '';
+        if (window.QRCode) {
+          new window.QRCode(qrContainer, {
+            text: url,
+            width: 158,
+            height: 158,
+            colorDark: '#0f172a',
+            colorLight: '#ffffff',
+            correctLevel: window.QRCode.CorrectLevel.M
+          });
+        }
+      }
+
+      newCodeBtn.addEventListener('click', () => {
+        state.roomCode = generateRoomCode();
+        connectCloudBroker(0);
+      });
+
+      copyUrlBtn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(pairingUrlText.value);
+          copyUrlBtn.textContent = 'Copied!';
+          setTimeout(() => (copyUrlBtn.textContent = 'Copy'), 1500);
+        } catch {
+          pairingUrlText.select();
+          document.execCommand('copy');
+        }
+      });
+
+      // --- After-PPT Direct Link ---
       function updateRedirectUI() {
         redirectUrlInput.value = state.redirectUrl;
         testRedirectBtn.disabled = !state.redirectUrl;
@@ -882,13 +1062,8 @@
         }
       });
 
-      clearRedirectBtn.addEventListener('click', () => {
-        setRedirectUrl('');
-      });
-
-      testRedirectBtn.addEventListener('click', () => {
-        triggerSiteRedirect(state.redirectUrl);
-      });
+      clearRedirectBtn.addEventListener('click', () => setRedirectUrl(''));
+      testRedirectBtn.addEventListener('click', () => triggerSiteRedirect(state.redirectUrl));
 
       function triggerSiteRedirect(rawUrl) {
         const target = normalizeUrl(rawUrl || state.redirectUrl);
@@ -898,173 +1073,12 @@
         redirectOverlay.classList.remove('hidden');
 
         setTimeout(() => {
-          if (peer && !peer.destroyed) {
-            try { peer.destroy(); } catch {}
+          if (mqttClient) {
+            try { mqttClient.end(true); } catch {}
           }
           window.location.href = target;
         }, 450);
       }
-
-      // --- WebRTC PeerJS Host ---
-      function initPeerHost() {
-        renderPairingQR();
-
-        if (!window.Peer) {
-          remoteStatusText.textContent = 'Cloud Offline';
-          return;
-        }
-
-        if (peer) {
-          try { peer.destroy(); } catch {}
-          peer = null;
-        }
-        remoteConnections.clear();
-        signalingReady = false;
-        updateRemoteStatus();
-
-        peer = new window.Peer(PEER_PREFIX + state.roomCode, {
-          debug: 1,
-          config: ICE_CONFIG
-        });
-
-        peer.on('open', () => {
-          signalingReady = true;
-          updateRemoteStatus();
-        });
-
-        peer.on('connection', (conn) => {
-          conn.on('open', () => {
-            remoteConnections.set(conn.peer, conn);
-            updateRemoteStatus();
-            conn.send({ type: 'state', state: buildSerializableState(true) });
-          });
-
-          conn.on('data', (msg) => {
-            if (msg && msg.type === 'command') {
-              handleRemoteCommand(msg.action, msg.payload);
-            }
-          });
-
-          const cleanupConn = () => {
-            remoteConnections.delete(conn.peer);
-            updateRemoteStatus();
-          };
-          conn.on('close', cleanupConn);
-          conn.on('error', cleanupConn);
-        });
-
-        peer.on('disconnected', () => {
-          signalingReady = false;
-          updateRemoteStatus();
-          if (peer && !peer.destroyed) {
-            setTimeout(() => { try { peer.reconnect(); } catch {} }, 1500);
-          }
-        });
-
-        peer.on('error', (err) => {
-          if (err.type === 'unavailable-id') {
-            state.roomCode = generateRoomCode();
-            initPeerHost();
-          }
-        });
-      }
-
-      window.addEventListener('beforeunload', () => {
-        if (peer && !peer.destroyed) {
-          try { peer.destroy(); } catch {}
-        }
-      });
-
-      function handleRemoteCommand(action, payload) {
-        switch (action) {
-          case 'next':
-            goToSlide(state.currentSlide + 1);
-            break;
-          case 'prev':
-            goToSlide(state.currentSlide - 1);
-            break;
-          case 'goto':
-            if (typeof payload?.index === 'number') goToSlide(payload.index);
-            break;
-          case 'blackout':
-            toggleBlackout(typeof payload?.active === 'boolean' ? payload.active : undefined);
-            break;
-          case 'fullscreen':
-            requestStageFullscreen(true);
-            break;
-          case 'laser-move':
-            if (payload && typeof payload.x === 'number' && typeof payload.y === 'number') {
-              laserDot.classList.remove('hidden');
-              laserDot.style.left = `${Math.max(0, Math.min(1, payload.x)) * 100}%`;
-              laserDot.style.top = `${Math.max(0, Math.min(1, payload.y)) * 100}%`;
-            }
-            break;
-          case 'laser-end':
-            laserDot.classList.add('hidden');
-            break;
-          case 'set-redirect':
-            setRedirectUrl(payload?.url || '');
-            break;
-          case 'redirect':
-            triggerSiteRedirect(payload?.url || state.redirectUrl);
-            break;
-        }
-      }
-
-      function updateRemoteStatus() {
-        const count = remoteConnections.size;
-        remoteStatusPill.classList.remove('ready', 'connected');
-        if (count > 0) {
-          remoteStatusPill.classList.add('connected');
-          remoteStatusText.textContent = `${count} Remote${count > 1 ? 's' : ''} Paired`;
-        } else if (signalingReady) {
-          remoteStatusPill.classList.add('ready');
-          remoteStatusText.textContent = 'Ready for Remote';
-        } else {
-          remoteStatusText.textContent = 'Connecting Cloud...';
-        }
-      }
-
-      function renderPairingQR() {
-        roomCodeBadge.textContent = `ROOM: ${state.roomCode}`;
-        roomCodeBig.textContent = state.roomCode;
-
-        const baseUrl =
-          window.location.protocol === 'file:'
-            ? 'https://your-site.vercel.app'
-            : window.location.origin;
-        const url = `${baseUrl}/?room=${state.roomCode}`;
-
-        pairingUrlText.value = url;
-        qrContainer.innerHTML = '';
-
-        if (window.QRCode) {
-          new window.QRCode(qrContainer, {
-            text: url,
-            width: 158,
-            height: 158,
-            colorDark: '#0f172a',
-            colorLight: '#ffffff',
-            correctLevel: window.QRCode.CorrectLevel.M
-          });
-        }
-      }
-
-      newCodeBtn.addEventListener('click', () => {
-        state.roomCode = generateRoomCode();
-        initPeerHost();
-      });
-
-      copyUrlBtn.addEventListener('click', async () => {
-        try {
-          await navigator.clipboard.writeText(pairingUrlText.value);
-          copyUrlBtn.textContent = 'Copied!';
-          setTimeout(() => (copyUrlBtn.textContent = 'Copy'), 1500);
-        } catch {
-          pairingUrlText.select();
-          document.execCommand('copy');
-        }
-      });
 
       // --- File Upload & Rendering ---
       uploadTriggerBtn.addEventListener('click', () => fileInput.click());
@@ -1099,7 +1113,6 @@
       async function handleFiles(files) {
         const first = files[0];
         const ext = first.name.split('.').pop().toLowerCase();
-
         if (ext === 'ppt') {
           alert('Legacy .ppt files should be saved as .pptx or exported to .pdf first.');
           return;
@@ -1112,7 +1125,7 @@
 
       async function loadPptxFile(file) {
         if (!window.PptxViewJS) {
-          alert('PPTX viewer library is still loading or blocked. Please check your connection.');
+          alert('PPTX viewer library is still loading or blocked.');
           return;
         }
         resetDeck();
@@ -1160,7 +1173,6 @@
 
           const presDoc = parser.parseFromString(presXml, 'application/xml');
           const relsDoc = parser.parseFromString(presRelsXml, 'application/xml');
-
           const relMap = new Map();
           getLocal(relsDoc, 'Relationship').forEach((rel) => {
             relMap.set(rel.getAttribute('Id'), rel.getAttribute('Target'));
@@ -1271,7 +1283,7 @@
             bullets: [
               'Desktop users land directly on the Upload & Present studio',
               'Mobile devices automatically route straight to remote.html',
-              'Scan the QR code on the right from Wi-Fi or mobile data'
+              'Pairs reliably over Wi-Fi or 4G/5G via secure cloud WebSockets'
             ],
             note: 'Welcome! Point out that you only need to share the main URL—phones route automatically.'
           },
@@ -1493,13 +1505,13 @@
       function capturePreviewDataUrl() {
         if (!state.totalSlides || slideCanvas.width === 0 || slideCanvas.height === 0) return null;
         try {
-          const thumbW = 480;
-          const thumbH = Math.max(120, Math.round(thumbW * (slideCanvas.height / slideCanvas.width)));
+          const thumbW = 360;
+          const thumbH = Math.max(100, Math.round(thumbW * (slideCanvas.height / slideCanvas.width)));
           const offscreen = document.createElement('canvas');
           offscreen.width = thumbW;
           offscreen.height = thumbH;
           offscreen.getContext('2d').drawImage(slideCanvas, 0, 0, thumbW, thumbH);
-          return offscreen.toDataURL('image/jpeg', 0.65);
+          return offscreen.toDataURL('image/jpeg', 0.6);
         } catch {
           return null;
         }
@@ -1518,13 +1530,15 @@
       }
 
       function broadcastState() {
-        if (remoteConnections.size === 0) return;
-        const payload = { type: 'state', state: buildSerializableState(true) };
-        remoteConnections.forEach((conn) => {
-          if (conn.open) {
-            try { conn.send(payload); } catch {}
-          }
+        if (!mqttClient || !cloudConnected) return;
+        const payload = JSON.stringify({
+          type: 'state',
+          brokerIndex,
+          state: buildSerializableState(true)
         });
+        try {
+          mqttClient.publish(stateTopic(), payload, { qos: 0 });
+        } catch {}
       }
 
       prevSlideBtn.addEventListener('click', () => goToSlide(state.currentSlide - 1));
@@ -1581,7 +1595,7 @@
       });
 
       updateRedirectUI();
-      initPeerHost();
+      connectCloudBroker(0);
     })();
   </script>
 </body>
