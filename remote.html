@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+  />
+  <meta name="theme-color" content="#05070e" />
+  <title>SlideSync — Mobile Remote</title>
+  <link rel="stylesheet" href="/css/remote.css" />
+</head>
+<body>
+  <!-- View 1: Room Pairing Screen -->
+  <section class="connect-view" id="connectView">
+    <div class="connect-card">
+      <div class="brand-badge">SlideSync Remote</div>
+      <h1>Connect to Presenter</h1>
+      <p>Enter the 6-character room code shown on your desktop screen.</p>
+
+      <form id="joinForm">
+        <input
+          type="text"
+          id="roomInput"
+          maxlength="8"
+          placeholder="K7M2P9"
+          autocomplete="off"
+          autocapitalize="characters"
+          spellcheck="false"
+          required
+        />
+        <button type="submit" class="btn-primary-full" id="joinBtn">Connect Remote</button>
+      </form>
+
+      <div class="status-note hidden" id="connectStatus"></div>
+      <div class="error-banner hidden" id="connectError"></div>
+
+      <a href="/presenter.html" class="desktop-switch">Switch to Desktop Presenter →</a>
+    </div>
+  </section>
+
+  <!-- View 2: Active Remote Dashboard -->
+  <section class="remote-view hidden" id="remoteView">
+    <header class="remote-header">
+      <div class="conn-status">
+        <span class="conn-dot" id="connDot"></span>
+        <span id="connLabel">Connected</span>
+      </div>
+      <div class="room-tag" id="activeRoomBadge">ROOM ------</div>
+      <div class="header-btns">
+        <button class="btn-ghost hidden" id="reconnectBtn">Reconnect</button>
+        <button class="btn-ghost" id="disconnectBtn">Change</button>
+      </div>
+    </header>
+
+    <!-- Timer & Slide Counter -->
+    <div class="meta-bar">
+      <div class="timer-group">
+        <span class="timer-display" id="timerDisplay">00:00</span>
+        <button class="mini-btn" id="timerToggleBtn">Start</button>
+        <button class="mini-btn" id="timerResetBtn">Reset</button>
+      </div>
+      <button class="slide-badge-btn" id="slideJumpBtn">
+        <span id="remoteSlideCounter">No Deck</span> ▾
+      </button>
+    </div>
+
+    <!-- Live Slide Preview / Laser Touchpad -->
+    <div class="preview-card" id="previewContainer">
+      <img id="remoteSlideImg" class="hidden" alt="Current slide preview" draggable="false" />
+      <div class="placeholder-box" id="noSlidePlaceholder">
+        Waiting for presentation upload on desktop...
+      </div>
+      <div class="blackout-banner hidden" id="blackoutBanner">BLACK SCREEN ACTIVE</div>
+      <div class="laser-badge hidden" id="laserBadge">LASER ON — Touch &amp; drag to point</div>
+      <div class="laser-indicator hidden" id="laserIndicator"></div>
+    </div>
+
+    <!-- Speaker Notes -->
+    <div class="notes-card">
+      <div class="notes-label">Speaker Notes</div>
+      <div class="notes-content" id="remoteNotes">No speaker notes for this slide.</div>
+    </div>
+
+    <!-- Bottom Thumb Dock -->
+    <footer class="control-dock">
+      <div class="utility-row">
+        <button class="util-btn" id="remoteBlackoutBtn">Black Screen</button>
+        <button class="util-btn" id="remoteLaserBtn">Laser Pointer</button>
+        <button class="util-btn" id="remoteFullscreenBtn">Fullscreen</button>
+      </div>
+      <div class="nav-row">
+        <button class="nav-btn prev-btn" id="remotePrevBtn">← Prev</button>
+        <button class="nav-btn next-btn" id="remoteNextBtn">Next Slide →</button>
+      </div>
+    </footer>
+  </section>
+
+  <!-- Slide Jump Modal -->
+  <div class="modal-backdrop hidden" id="jumpModal">
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <h3>Jump to Slide</h3>
+        <button class="btn-ghost" id="closeJumpBtn">Done</button>
+      </div>
+      <div class="jump-grid" id="jumpGrid"></div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js"></script>
+  <script src="/js/remote.js"></script>
+</body>
+</html>

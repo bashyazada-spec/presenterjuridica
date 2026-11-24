@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SlideSync — Detecting Platform...</title>
+  <script src="/js/detect.js"></script>
+  <script>
+    window.PlatformDetector.autoRedirect();
+  </script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #0b0f19;
+      color: #e2e8f0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      padding: 24px;
+    }
+    .card {
+      background: #131a2a;
+      border: 1px solid #24304a;
+      border-radius: 16px;
+      padding: 32px;
+      max-width: 420px;
+      width: 100%;
+      text-align: center;
+    }
+    h1 { font-size: 1.4rem; margin-bottom: 10px; }
+    p { color: #94a3b8; font-size: 0.95rem; margin-bottom: 24px; }
+    .actions { display: flex; flex-direction: column; gap: 12px; }
+    a {
+      display: block;
+      padding: 14px 18px;
+      border-radius: 10px;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .btn-desktop { background: #4f46e5; color: #fff; }
+    .btn-mobile { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>SlideSync</h1>
+    <p>Redirecting to the right view for your device...</p>
+    <div class="actions">
+      <a class="btn-desktop" id="desktopLink" href="/presenter.html">Open Desktop Presenter</a>
+      <a class="btn-mobile" id="mobileLink" href="/remote.html">Open Mobile Remote</a>
+    </div>
+  </div>
+  <script>
+    const qs = window.location.search + window.location.hash;
+    document.getElementById('desktopLink').href = '/presenter.html' + qs;
+    document.getElementById('mobileLink').href = '/remote.html' + qs;
+  </script>
+</body>
+</html>
