@@ -4,9 +4,18 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SlideSync — Desktop Presenter Studio</title>
-  <script src="js/detect.js"></script>
+  <script src="detect.js"></script>
   <script>
-    window.PlatformDetector.enforcePlatform('desktop');
+    if (window.PlatformDetector) {
+      window.PlatformDetector.enforcePlatform('desktop');
+    } else {
+      var isMob =
+        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobi/i.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      if (isMob && !/platform=desktop/i.test(location.search)) {
+        location.replace('remote.html' + location.search + location.hash);
+      }
+    }
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -475,12 +484,13 @@
 
     .qr-box {
       background: #ffffff;
-      padding: 10px;
-      border-radius: 12px;
+      padding: 16px;
+      border-radius: 14px;
       display: flex;
       justify-content: center;
       margin-bottom: 10px;
     }
+    .qr-box img, .qr-box canvas { display: block; }
 
     .url-row { display: flex; gap: 6px; }
     .url-row input,
@@ -712,7 +722,6 @@
     <p id="redirectOverlayUrl"></p>
   </div>
 
-  <!-- MQTT over WSS + Presentation Libraries -->
   <script src="https://cdn.jsdelivr.net/npm/mqtt@4.3.7/dist/mqtt.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -803,7 +812,8 @@
       let brokerIndex = 0;
       let cloudConnected = false;
       let fallbackTimer = null;
-      const activeRemotes = new Map(); // remoteId -> lastSeenTimestamp
+      let lastQrUrl = '';
+      const activeRemotes = new Map();
 
       function normalizeUrl(raw) {
         const trimmed = String(raw || '').trim();
@@ -836,10 +846,11 @@
         return `slidesync/v2/${state.roomCode}/state`;
       }
 
-      // --- Dual-Broker WSS MQTT Host (Works over Wi-Fi, 4G/5G & Strict Firewalls) ---
       function connectCloudBroker(idx = 0) {
+        renderPairingQR();
+
         if (!window.mqtt) {
-          remoteStatusText.textContent = 'Network Script Missing';
+          remoteStatusText.textContent = 'Cloud Script Offline';
           return;
         }
 
@@ -853,7 +864,6 @@
         cloudConnected = false;
         activeRemotes.clear();
         updateRemoteStatus();
-        renderPairingQR();
 
         const broker = BROKERS[brokerIndex];
         const clientId = `ss-host-${state.roomCode}-${Math.random().toString(36).slice(2, 7)}`;
@@ -866,7 +876,6 @@
           connectTimeout: 5000
         });
 
-        // If primary broker fails to connect within 5s, failover to secondary
         fallbackTimer = setTimeout(() => {
           if (!cloudConnected && brokerIndex < BROKERS.length - 1) {
             connectCloudBroker(brokerIndex + 1);
@@ -880,7 +889,6 @@
           renderPairingQR();
 
           mqttClient.subscribe(cmdTopic(), { qos: 0 }, () => {
-            // Announce state in case a remote is already waiting
             broadcastState();
           });
         });
@@ -904,7 +912,6 @@
         });
       }
 
-      // Prune stale remotes that stopped pinging (> 40s)
       setInterval(() => {
         const now = Date.now();
         let changed = false;
@@ -998,21 +1005,25 @@
         pairingUrlText.value = url;
         previewRemoteLink.href = `remote.html?platform=mobile&room=${state.roomCode}${bQuery}`;
 
+        if (url === lastQrUrl && qrContainer.children.length > 0) return;
+        lastQrUrl = url;
+
         qrContainer.innerHTML = '';
         if (window.QRCode) {
           new window.QRCode(qrContainer, {
             text: url,
-            width: 158,
-            height: 158,
-            colorDark: '#0f172a',
+            width: 184,
+            height: 184,
+            colorDark: '#000000',
             colorLight: '#ffffff',
-            correctLevel: window.QRCode.CorrectLevel.M
+            correctLevel: window.QRCode.CorrectLevel.L
           });
         }
       }
 
       newCodeBtn.addEventListener('click', () => {
         state.roomCode = generateRoomCode();
+        lastQrUrl = '';
         connectCloudBroker(0);
       });
 
@@ -1027,7 +1038,6 @@
         }
       });
 
-      // --- After-PPT Direct Link ---
       function updateRedirectUI() {
         redirectUrlInput.value = state.redirectUrl;
         testRedirectBtn.disabled = !state.redirectUrl;
@@ -1080,7 +1090,6 @@
         }, 450);
       }
 
-      // --- File Upload & Rendering ---
       uploadTriggerBtn.addEventListener('click', () => fileInput.click());
       browseBtn.addEventListener('click', () => fileInput.click());
 
@@ -1231,372 +1240,3 @@
         }
         resetDeck();
         fileBadge.textContent = `Loading ${file.name}...`;
-        dropStatus.textContent = `Rendering ${file.name}...`;
-        dropStatus.classList.remove('hidden');
-
-        try {
-          const buffer = await file.arrayBuffer();
-          const pdfDoc = await window.pdfjsLib.getDocument({ data: buffer }).promise;
-          state.deckType = 'pdf';
-          state.pdfDoc = pdfDoc;
-          state.fileName = file.name;
-          state.totalSlides = pdfDoc.numPages;
-          state.currentSlide = 0;
-          state.notes = [];
-          showStage();
-          await renderCurrentSlide();
-        } catch (err) {
-          console.error(err);
-          fileBadge.textContent = 'Load failed';
-          dropStatus.classList.add('hidden');
-          alert('Could not open this PDF file.');
-        }
-      }
-
-      async function loadImageFiles(files) {
-        resetDeck();
-        const sorted = files
-          .filter((f) => /\.(png|jpe?g|webp)$/i.test(f.name))
-          .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-        if (!sorted.length) return;
-        state.deckType = 'images';
-        state.fileName = sorted.length === 1 ? sorted[0].name : `${sorted.length} Image Slides`;
-        state.imageSlides = sorted.map((f) => URL.createObjectURL(f));
-        state.totalSlides = state.imageSlides.length;
-        state.currentSlide = 0;
-        state.notes = [];
-        showStage();
-        await renderCurrentSlide();
-      }
-
-      loadSampleBtn.addEventListener('click', async () => {
-        resetDeck();
-        state.deckType = 'demo';
-        state.fileName = 'SlideSync_Studio_Demo.pptx';
-        state.demoSlides = [
-          {
-            c1: '#0f172a',
-            c2: '#1e1b4b',
-            accent: '#818cf8',
-            tag: '01 • PRESENTER ON INDEX',
-            title: 'Upload & Present Instantly',
-            bullets: [
-              'Desktop users land directly on the Upload & Present studio',
-              'Mobile devices automatically route straight to remote.html',
-              'Pairs reliably over Wi-Fi or 4G/5G via secure cloud WebSockets'
-            ],
-            note: 'Welcome! Point out that you only need to share the main URL—phones route automatically.'
-          },
-          {
-            c1: '#082f49',
-            c2: '#0f172a',
-            accent: '#22d3ee',
-            tag: '02 • WIRELESS REMOTE',
-            title: 'Full Control From Your Phone',
-            bullets: [
-              'Live slide thumbnail & private speaker notes synced per slide',
-              'Touch-drag Red Laser Pointer highlights key details live',
-              'Black Screen mode, slide jumper grid & built-in timer'
-            ],
-            note: 'Try enabling Laser Pointer on your phone and dragging across the preview card.'
-          },
-          {
-            c1: '#3b0764',
-            c2: '#0f172a',
-            accent: '#e879f9',
-            tag: '03 • AFTER PRESENTATION',
-            title: 'Direct Link After Your Slides',
-            bullets: [
-              'Paste any website or form link in the "After-PPT Direct Link" box',
-              'At the end of your talk, tap "Open Link ↗" on your remote',
-              'This screen automatically jumps straight to your destination URL!'
-            ],
-            note: 'Final slide! Tap "Open Link" on the mobile remote to redirect this screen to your URL.'
-          }
-        ];
-        state.notes = state.demoSlides.map((s) => s.note);
-        state.totalSlides = state.demoSlides.length;
-        state.currentSlide = 0;
-        showStage();
-        await renderCurrentSlide();
-      });
-
-      function resetDeck() {
-        state.imageSlides.forEach((url) => URL.revokeObjectURL(url));
-        state.imageSlides = [];
-        state.pdfDoc = null;
-        state.pptxViewer = null;
-        state.demoSlides = [];
-        state.notes = [];
-        state.currentSlide = 0;
-        state.totalSlides = 0;
-        toggleBlackout(false);
-      }
-
-      function showStage() {
-        dropStatus.classList.add('hidden');
-        dropZone.classList.add('hidden');
-        stageWrapper.classList.remove('hidden');
-        fileBadge.textContent = state.fileName;
-        blackoutBtn.disabled = false;
-        fullscreenBtn.disabled = false;
-        buildSlideJumpGrid();
-      }
-
-      function buildSlideJumpGrid() {
-        slideSelectList.innerHTML = '';
-        for (let i = 0; i < state.totalSlides; i++) {
-          const btn = document.createElement('button');
-          btn.className = 'jump-pill';
-          btn.textContent = i + 1;
-          btn.addEventListener('click', () => goToSlide(i));
-          slideSelectList.appendChild(btn);
-        }
-      }
-
-      async function goToSlide(targetIndex) {
-        if (state.totalSlides === 0 || state.isRendering) return;
-        const clamped = Math.max(0, Math.min(state.totalSlides - 1, targetIndex));
-        if (clamped === state.currentSlide) return;
-
-        state.isRendering = true;
-        try {
-          if (state.deckType === 'pptx' && state.pptxViewer) {
-            const v = state.pptxViewer;
-            if (clamped === state.currentSlide + 1 && typeof v.nextSlide === 'function') {
-              await v.nextSlide();
-            } else if (clamped === state.currentSlide - 1 && typeof v.previousSlide === 'function') {
-              await v.previousSlide();
-            } else if (typeof v.goToSlide === 'function') {
-              await v.goToSlide(clamped);
-            } else if (typeof v.renderSlide === 'function') {
-              await v.renderSlide(clamped, slideCanvas);
-            }
-            state.currentSlide =
-              typeof v.getCurrentSlideIndex === 'function' ? v.getCurrentSlideIndex() : clamped;
-            syncAfterRender();
-          } else {
-            state.currentSlide = clamped;
-            await renderCurrentSlide();
-          }
-        } catch (err) {
-          console.error(err);
-        } finally {
-          state.isRendering = false;
-        }
-      }
-
-      async function renderCurrentSlide() {
-        const ctx = slideCanvas.getContext('2d');
-        if (state.deckType === 'pdf' && state.pdfDoc) {
-          const page = await state.pdfDoc.getPage(state.currentSlide + 1);
-          const baseViewport = page.getViewport({ scale: 1 });
-          const viewport = page.getViewport({ scale: 1600 / baseViewport.width });
-          slideCanvas.width = viewport.width;
-          slideCanvas.height = viewport.height;
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, slideCanvas.width, slideCanvas.height);
-          await page.render({ canvasContext: ctx, viewport }).promise;
-        } else if (state.deckType === 'images') {
-          const img = await loadImage(state.imageSlides[state.currentSlide]);
-          slideCanvas.width = 1280;
-          slideCanvas.height = 720;
-          ctx.fillStyle = '#000000';
-          ctx.fillRect(0, 0, 1280, 720);
-          const scale = Math.min(1280 / img.width, 720 / img.height);
-          const w = img.width * scale;
-          const h = img.height * scale;
-          ctx.drawImage(img, (1280 - w) / 2, (720 - h) / 2, w, h);
-        } else if (state.deckType === 'demo') {
-          drawDemoSlide(ctx, state.demoSlides[state.currentSlide], state.currentSlide + 1);
-        }
-        syncAfterRender();
-      }
-
-      function loadImage(src) {
-        return new Promise((resolve, reject) => {
-          const img = new Image();
-          img.onload = () => resolve(img);
-          img.onerror = reject;
-          img.src = src;
-        });
-      }
-
-      function drawDemoSlide(ctx, slide, num) {
-        slideCanvas.width = 1280;
-        slideCanvas.height = 720;
-
-        const grad = ctx.createLinearGradient(0, 0, 1280, 720);
-        grad.addColorStop(0, slide.c1);
-        grad.addColorStop(1, slide.c2);
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, 1280, 720);
-
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
-        for (let gx = 40; gx < 1280; gx += 48) {
-          for (let gy = 40; gy < 720; gy += 48) {
-            ctx.fillRect(gx, gy, 2, 2);
-          }
-        }
-
-        const orb = ctx.createRadialGradient(1080, 140, 20, 1080, 140, 320);
-        orb.addColorStop(0, slide.accent + '44');
-        orb.addColorStop(1, 'transparent');
-        ctx.fillStyle = orb;
-        ctx.fillRect(700, 0, 580, 500);
-
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.roundRect(72, 72, 1136, 576, 28);
-        ctx.fill();
-        ctx.stroke();
-
-        ctx.fillStyle = slide.accent + '28';
-        ctx.beginPath();
-        ctx.roundRect(120, 118, 300, 38, 19);
-        ctx.fill();
-
-        ctx.fillStyle = slide.accent;
-        ctx.font = '700 17px Inter, system-ui, sans-serif';
-        ctx.fillText(slide.tag, 142, 143);
-
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '800 58px Inter, system-ui, sans-serif';
-        ctx.fillText(slide.title, 120, 226);
-
-        ctx.fillStyle = slide.accent;
-        ctx.beginPath();
-        ctx.roundRect(120, 252, 92, 6, 3);
-        ctx.fill();
-
-        ctx.font = '500 30px Inter, system-ui, sans-serif';
-        slide.bullets.forEach((line, idx) => {
-          const y = 342 + idx * 78;
-          ctx.fillStyle = slide.accent;
-          ctx.beginPath();
-          ctx.arc(134, y - 10, 7, 0, Math.PI * 2);
-          ctx.fill();
-
-          ctx.fillStyle = '#e2e8f0';
-          ctx.fillText(line, 162, y);
-        });
-
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-        ctx.font = '600 18px Inter, system-ui, sans-serif';
-        ctx.fillText(`SLIDESYNC STUDIO  •  SLIDE ${num} OF ${state.totalSlides}`, 120, 598);
-      }
-
-      function syncAfterRender() {
-        slideCounter.textContent = `${state.currentSlide + 1} / ${state.totalSlides}`;
-        prevSlideBtn.disabled = state.currentSlide <= 0;
-        nextSlideBtn.disabled = state.currentSlide >= state.totalSlides - 1;
-        progressFill.style.width = `${((state.currentSlide + 1) / state.totalSlides) * 100}%`;
-
-        Array.from(slideSelectList.children).forEach((btn, idx) => {
-          btn.classList.toggle('active', idx === state.currentSlide);
-        });
-
-        notesDisplay.textContent = state.notes[state.currentSlide] || 'No speaker notes for this slide.';
-        broadcastState();
-      }
-
-      function capturePreviewDataUrl() {
-        if (!state.totalSlides || slideCanvas.width === 0 || slideCanvas.height === 0) return null;
-        try {
-          const thumbW = 360;
-          const thumbH = Math.max(100, Math.round(thumbW * (slideCanvas.height / slideCanvas.width)));
-          const offscreen = document.createElement('canvas');
-          offscreen.width = thumbW;
-          offscreen.height = thumbH;
-          offscreen.getContext('2d').drawImage(slideCanvas, 0, 0, thumbW, thumbH);
-          return offscreen.toDataURL('image/jpeg', 0.6);
-        } catch {
-          return null;
-        }
-      }
-
-      function buildSerializableState(includePreview) {
-        return {
-          fileName: state.fileName,
-          currentSlide: state.currentSlide,
-          totalSlides: state.totalSlides,
-          blackout: state.blackout,
-          notes: state.notes[state.currentSlide] || '',
-          redirectUrl: state.redirectUrl,
-          previewDataUrl: includePreview ? capturePreviewDataUrl() : null
-        };
-      }
-
-      function broadcastState() {
-        if (!mqttClient || !cloudConnected) return;
-        const payload = JSON.stringify({
-          type: 'state',
-          brokerIndex,
-          state: buildSerializableState(true)
-        });
-        try {
-          mqttClient.publish(stateTopic(), payload, { qos: 0 });
-        } catch {}
-      }
-
-      prevSlideBtn.addEventListener('click', () => goToSlide(state.currentSlide - 1));
-      nextSlideBtn.addEventListener('click', () => goToSlide(state.currentSlide + 1));
-
-      function toggleBlackout(forceState) {
-        state.blackout = typeof forceState === 'boolean' ? forceState : !state.blackout;
-        blackoutOverlay.classList.toggle('hidden', !state.blackout);
-        blackoutBtn.classList.toggle('active', state.blackout);
-        stageBlackoutBtn.classList.toggle('active', state.blackout);
-        broadcastState();
-      }
-
-      blackoutBtn.addEventListener('click', () => toggleBlackout());
-      stageBlackoutBtn.addEventListener('click', () => toggleBlackout());
-
-      async function requestStageFullscreen(fromRemote = false) {
-        if (!state.totalSlides) return;
-        try {
-          if (document.fullscreenElement) await document.exitFullscreen();
-          else await stageWrapper.requestFullscreen();
-        } catch {
-          if (fromRemote) showToast('Remote requested Fullscreen — press F or click "Present Fullscreen".');
-        }
-      }
-
-      function showToast(msg) {
-        fullscreenToast.textContent = msg;
-        fullscreenToast.classList.remove('hidden');
-        setTimeout(() => fullscreenToast.classList.add('hidden'), 3500);
-      }
-
-      fullscreenBtn.addEventListener('click', () => requestStageFullscreen(false));
-      stageFullscreenBtn.addEventListener('click', () => requestStageFullscreen(false));
-      toggleSidebarBtn.addEventListener('click', () => sidebar.classList.toggle('collapsed'));
-
-      document.addEventListener('keydown', (e) => {
-        if (!state.totalSlides) return;
-        if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
-
-        if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
-          e.preventDefault();
-          goToSlide(state.currentSlide + 1);
-        } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
-          e.preventDefault();
-          goToSlide(state.currentSlide - 1);
-        } else if (e.key.toLowerCase() === 'f') {
-          e.preventDefault();
-          requestStageFullscreen(false);
-        } else if (e.key.toLowerCase() === 'b') {
-          e.preventDefault();
-          toggleBlackout();
-        }
-      });
-
-      updateRedirectUI();
-      connectCloudBroker(0);
-    })();
-  </script>
-</body>
-</html>
